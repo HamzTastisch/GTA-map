@@ -1,0 +1,9 @@
+{
+  "name":"VICE CITY GPS",
+  "short_name":"VICE CITY",
+  "start_url":"./index.html",
+  "display":"standalone",
+  "background_color":"#090b18",
+  "theme_color":"#090b18",
+  "icons":[]
+}
