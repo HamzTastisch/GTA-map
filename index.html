@@ -1,11 +1,455 @@
-<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><meta name="theme-color" content="#090b18"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="VICE CITY GPS"><link rel="manifest" href="manifest.json"><title>VICE CITY GPS</title><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><style>
-:root{--pink:#ff4fc8;--cyan:#31e7e4;--panel:rgba(13,16,34,.94)}*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:#090b18;color:#fff;font-family:system-ui,-apple-system,sans-serif;overflow:hidden}#map{position:absolute;inset:0;background:#101426}.leaflet-tile{filter:brightness(.66) saturate(.65) hue-rotate(185deg) contrast(1.15)}.leaflet-control-attribution{background:rgba(8,10,22,.72)!important;color:#b8c4dc!important;font-size:9px!important}.leaflet-control-attribution a{color:#31e7e4!important}.top{position:absolute;z-index:800;top:env(safe-area-inset-top,12px);left:14px;right:14px;padding-top:10px;pointer-events:none}.brand{font-weight:950;letter-spacing:3px;font-size:12px;color:var(--cyan);text-shadow:0 0 12px #31e7e488}.brand span{color:var(--pink)}.search{pointer-events:auto;margin-top:10px;background:var(--panel);border:1px solid #ff4fc866;border-radius:15px;padding:12px;display:flex;gap:9px;box-shadow:0 8px 28px #0008;backdrop-filter:blur(14px)}input{min-width:0;flex:1;background:transparent;border:0;outline:0;color:white;font-size:16px}input::placeholder{color:#8992b1}button{border:0;color:#fff;background:linear-gradient(120deg,#ff36b8,#8d4dff);border-radius:11px;padding:10px 13px;font-weight:800}.secondary{background:#202743;border:1px solid #31e7e455}.bottom{position:absolute;z-index:800;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);left:14px;right:14px;background:var(--panel);border:1px solid #31e7e455;border-radius:20px;padding:14px;backdrop-filter:blur(16px);box-shadow:0 10px 34px #0009}.row{display:flex;align-items:center;justify-content:space-between;gap:10px}.status{font-size:11px;letter-spacing:1.5px;color:var(--cyan);font-weight:900}#message{font-size:13px;color:#c6cce0;margin-top:8px;min-height:18px}.actions{display:flex;gap:8px;margin-top:12px}.actions button{flex:1}#locate{position:absolute;z-index:700;right:16px;bottom:230px;width:46px;height:46px;border-radius:50%;font-size:20px;padding:0;background:#121a31;border:1px solid #31e7e4aa}.pin{width:18px;height:18px;border-radius:50%;background:var(--cyan);border:3px solid white;box-shadow:0 0 0 7px #31e7e433,0 0 20px var(--cyan)}
-</style></head><body><div id="map"></div><div class="top"><div class="brand">VICE CITY <span>GPS</span> <span style="color:#fff">/ LEONIDA EDITION</span></div><div class="search"><input id="destination" placeholder="Wohin soll's gehen?" autocomplete="street-address"><button id="go">ROUTE</button></div></div><button id="locate">◎</button><div class="bottom"><div class="row"><div class="status">● GPS SYSTEM <span id="gps">BEREIT</span></div><div style="font-size:11px;color:#9ba5c8">NIGHT DRIVE MODE</div></div><div id="message">Standort freigeben, um deine Route zu starten.</div><div class="actions"><button class="secondary" id="mypos">MEIN STANDORT</button><button id="clear">ROUTE LÖSCHEN</button></div></div>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script>
-const map=L.map('map',{zoomControl:false}).setView([54.3233,10.1228],13);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{subdomains:'abc',maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(map);
-let me=null,marker=null,route=null,destMarker=null;const msg=document.getElementById('message'),gps=document.getElementById('gps');function say(t){msg.textContent=t}
-function locate(){if(!navigator.geolocation){say('GPS wird nicht unterstützt.');return}gps.textContent='SUCHE…';say('Suche deinen GPS-Standort…');navigator.geolocation.getCurrentPosition(p=>{me=[p.coords.latitude,p.coords.longitude];gps.textContent='ONLINE';if(marker)map.removeLayer(marker);marker=L.marker(me,{icon:L.divIcon({className:'',html:'<div class="pin"></div>',iconSize:[24,24],iconAnchor:[12,12]})}).addTo(map);map.setView(me,16);say('Standort gefunden. Ziel oben eingeben.')},e=>{gps.textContent='OFFLINE';say('Standort nicht verfügbar. Bitte Standortfreigabe erlauben und HTTPS verwenden.')},{enableHighAccuracy:true,timeout:12000})}
-async function makeRoute(){const dest=document.getElementById('destination').value.trim();if(!dest){say('Bitte zuerst ein Ziel eingeben.');return}if(!me){locate();say('Erst GPS-Standort ermitteln, danach Route erneut starten.');return}say('Ziel wird gesucht…');try{const q=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(dest));const hits=await q.json();if(!hits.length){say('Ziel nicht gefunden. Bitte genauer eingeben.');return}const end=[+hits[0].lat,+hits[0].lon];say('Route wird berechnet…');const r=await fetch(`https://router.project-osrm.org/route/v1/driving/${me[1]},${me[0]};${end[1]},${end[0]}?overview=full&geometries=geojson`);const data=await r.json();if(!data.routes?.length){say('Keine Route gefunden.');return}if(route)map.removeLayer(route);if(destMarker)map.removeLayer(destMarker);route=L.geoJSON(data.routes[0].geometry,{style:{color:'#ff4fc8',weight:6,opacity:.95}}).addTo(map);destMarker=L.circleMarker(end,{radius:8,color:'#fff',weight:2,fillColor:'#31e7e4',fillOpacity:1}).addTo(map);map.fitBounds(route.getBounds(),{padding:[50,50]});say(`Route bereit · ${(data.routes[0].distance/1000).toFixed(1)} km · ca. ${Math.round(data.routes[0].duration/60)} Min. (Vorschau, keine Sprachführung)`)}catch(e){say('Verbindung fehlgeschlagen. Bitte Internetverbindung prüfen.')}}
-document.getElementById('go').onclick=makeRoute;document.getElementById('mypos').onclick=locate;document.getElementById('locate').onclick=locate;document.getElementById('clear').onclick=()=>{if(route)map.removeLayer(route);if(destMarker)map.removeLayer(destMarker);route=destMarker=null;say('Route gelöscht.')};document.getElementById('destination').addEventListener('keydown',e=>{if(e.key==='Enter')makeRoute()});if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
-</script></body></html>
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+
+<meta name="theme-color" content="#090b18">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="VICE CITY GPS">
+
+<link rel="manifest" href="manifest.json">
+<title>VICE CITY GPS</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+<style>
+:root {
+ --pink:#ff4fc8;
+ --cyan:#31e7e4;
+ --panel:rgba(13,16,34,.94);
+}
+
+* {
+ box-sizing:border-box;
+}
+
+html,body {
+ margin:0;
+ width:100%;
+ height:100%;
+ background:#090b18;
+ color:white;
+ font-family:system-ui,-apple-system,sans-serif;
+ overflow:hidden;
+}
+
+#map {
+ position:absolute;
+ inset:0;
+ background:#101426;
+}
+
+.leaflet-tile {
+ filter:brightness(.66) saturate(.65)
+ hue-rotate(185deg) contrast(1.15);
+}
+
+.leaflet-control-attribution {
+ background:rgba(8,10,22,.72)!important;
+ color:#b8c4dc!important;
+ font-size:9px!important;
+}
+
+.leaflet-control-attribution a {
+ color:#31e7e4!important;
+}
+
+.top {
+ position:absolute;
+ z-index:800;
+ top:env(safe-area-inset-top,12px);
+ left:14px;
+ right:14px;
+ padding-top:10px;
+ pointer-events:none;
+}
+
+.brand {
+ font-weight:950;
+ letter-spacing:3px;
+ font-size:12px;
+ color:var(--cyan);
+ text-shadow:0 0 12px #31e7e488;
+}
+
+.brand span {
+ color:var(--pink);
+}
+
+.search {
+ pointer-events:auto;
+ margin-top:10px;
+ background:var(--panel);
+ border:1px solid #ff4fc866;
+ border-radius:15px;
+ padding:12px;
+ display:flex;
+ gap:9px;
+ box-shadow:0 8px 28px #0008;
+ backdrop-filter:blur(14px);
+}
+
+input {
+ min-width:0;
+ flex:1;
+ background:transparent;
+ border:0;
+ outline:0;
+ color:white;
+ font-size:16px;
+}
+
+input::placeholder {
+ color:#8992b1;
+}
+
+button {
+ border:0;
+ color:white;
+ background:linear-gradient(120deg,#ff36b8,#8d4dff);
+ border-radius:11px;
+ padding:10px 13px;
+ font-weight:800;
+}
+
+.secondary {
+ background:#202743;
+ border:1px solid #31e7e455;
+}
+
+.bottom {
+ position:absolute;
+ z-index:800;
+ bottom:calc(env(safe-area-inset-bottom,0px) + 14px);
+ left:14px;
+ right:14px;
+ background:var(--panel);
+ border:1px solid #31e7e455;
+ border-radius:20px;
+ padding:14px;
+ backdrop-filter:blur(16px);
+ box-shadow:0 10px 34px #0009;
+}
+
+.row {
+ display:flex;
+ align-items:center;
+ justify-content:space-between;
+ gap:10px;
+}
+
+.status {
+ font-size:11px;
+ letter-spacing:1.5px;
+ color:var(--cyan);
+ font-weight:900;
+}
+
+#message {
+ font-size:13px;
+ color:#c6cce0;
+ margin-top:8px;
+ min-height:18px;
+}
+
+.actions {
+ display:flex;
+ gap:8px;
+ margin-top:12px;
+}
+
+.actions button {
+ flex:1;
+}
+
+#locate {
+ position:absolute;
+ z-index:700;
+ right:16px;
+ bottom:230px;
+ width:46px;
+ height:46px;
+ border-radius:50%;
+ font-size:20px;
+ padding:0;
+ background:#121a31;
+ border:1px solid #31e7e4aa;
+}
+
+.pin {
+ width:18px;
+ height:18px;
+ border-radius:50%;
+ background:var(--cyan);
+ border:3px solid white;
+ box-shadow:0 0 0 7px #31e7e433,
+ 0 0 20px var(--cyan);
+}
+</style>
+</head>
+
+<body>
+
+<div id="map"></div>
+
+<div class="top">
+ <div class="brand">
+  VICE CITY <span>GPS</span>
+  <span style="color:white">/ LEONIDA EDITION</span>
+ </div>
+
+ <div class="search">
+  <input id="destination"
+   placeholder="Wohin soll's gehen?"
+   autocomplete="street-address">
+
+  <button id="go">ROUTE</button>
+ </div>
+</div>
+
+<button id="locate">◎</button>
+
+<div class="bottom">
+
+ <div class="row">
+  <div class="status">
+   ● GPS SYSTEM <span id="gps">BEREIT</span>
+  </div>
+
+  <div style="font-size:11px;color:#9ba5c8">
+   NIGHT DRIVE MODE
+  </div>
+ </div>
+
+ <div id="message">
+  Standort freigeben, um deine Route zu starten.
+ </div>
+
+ <div class="actions">
+  <button class="secondary" id="mypos">
+   MEIN STANDORT
+  </button>
+
+  <button id="clear">
+   ROUTE LÖSCHEN
+  </button>
+ </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+
+// MAP INITIALIZATION
+const map = L.map('map',{zoomControl:false})
+ .setView([54.3233,10.1228],13);
+
+// OPENSTREETMAP - NO API KEY REQUIRED
+L.tileLayer(
+ 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+ {
+  subdomains:'abc',
+  maxZoom:19,
+  attribution:
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+ }
+).addTo(map);
+
+let me = null;
+let marker = null;
+let route = null;
+let destMarker = null;
+
+const msg = document.getElementById('message');
+const gps = document.getElementById('gps');
+
+function say(text) {
+ msg.textContent = text;
+}
+
+// GPS LOCATION
+function locate() {
+
+ if (!navigator.geolocation) {
+  say('GPS wird nicht unterstützt.');
+  return;
+ }
+
+ gps.textContent = 'SUCHE…';
+ say('Suche deinen GPS-Standort…');
+
+ navigator.geolocation.getCurrentPosition(
+  p => {
+
+   me = [
+    p.coords.latitude,
+    p.coords.longitude
+   ];
+
+   gps.textContent = 'ONLINE';
+
+   if(marker) map.removeLayer(marker);
+
+   marker = L.marker(me,{
+    icon:L.divIcon({
+     className:'',
+     html:'<div class="pin"></div>',
+     iconSize:[24,24],
+     iconAnchor:[12,12]
+    })
+   }).addTo(map);
+
+   map.setView(me,16);
+
+   say('Standort gefunden. Ziel oben eingeben.');
+  },
+
+  e => {
+   gps.textContent = 'OFFLINE';
+   say('Standort nicht verfügbar. Bitte Standortfreigabe erlauben und HTTPS verwenden.');
+  },
+
+  {
+   enableHighAccuracy:true,
+   timeout:12000
+  }
+ );
+}
+
+// ROUTE CALCULATION
+async function makeRoute() {
+
+ const dest = document
+  .getElementById('destination')
+  .value.trim();
+
+ if(!dest) {
+  say('Bitte zuerst ein Ziel eingeben.');
+  return;
+ }
+
+ if(!me) {
+  locate();
+  say('Erst GPS-Standort ermitteln, danach Route erneut starten.');
+  return;
+ }
+
+ say('Ziel wird gesucht…');
+
+ try {
+
+  const q = await fetch(
+   'https://nominatim.openstreetmap.org/search?format=json&limit=1&q='
+   + encodeURIComponent(dest)
+  );
+
+  const hits = await q.json();
+
+  if(!hits.length) {
+   say('Ziel nicht gefunden. Bitte genauer eingeben.');
+   return;
+  }
+
+  const end = [
+   Number(hits[0].lat),
+   Number(hits[0].lon)
+  ];
+
+  say('Route wird berechnet…');
+
+  const r = await fetch(
+   `https://router.project-osrm.org/route/v1/driving/${me[1]},${me[0]};${end[1]},${end[0]}?overview=full&geometries=geojson`
+  );
+
+  const data = await r.json();
+
+  if(!data.routes?.length) {
+   say('Keine Route gefunden.');
+   return;
+  }
+
+  if(route) map.removeLayer(route);
+  if(destMarker) map.removeLayer(destMarker);
+
+  route = L.geoJSON(
+   data.routes[0].geometry,
+   {
+    style:{
+     color:'#ff4fc8',
+     weight:6,
+     opacity:.95
+    }
+   }
+  ).addTo(map);
+
+  destMarker = L.circleMarker(
+   end,
+   {
+    radius:8,
+    color:'#fff',
+    weight:2,
+    fillColor:'#31e7e4',
+    fillOpacity:1
+   }
+  ).addTo(map);
+
+  map.fitBounds(route.getBounds(),{
+   padding:[50,50]
+  });
+
+  const km = (
+   data.routes[0].distance / 1000
+  ).toFixed(1);
+
+  const min = Math.round(
+   data.routes[0].duration / 60
+  );
+
+  say(
+   `Route bereit · ${km} km · ca. ${min} Min. (Vorschau, keine Sprachführung)`
+  );
+
+ } catch(e) {
+
+  say('Verbindung fehlgeschlagen. Bitte Internetverbindung prüfen.');
+
+ }
+}
+
+// BUTTONS
+document.getElementById('go').onclick = makeRoute;
+document.getElementById('mypos').onclick = locate;
+document.getElementById('locate').onclick = locate;
+
+document.getElementById('clear').onclick = () => {
+
+ if(route) map.removeLayer(route);
+ if(destMarker) map.removeLayer(destMarker);
+
+ route = null;
+ destMarker = null;
+
+ say('Route gelöscht.');
+};
+
+document.getElementById('destination')
+ .addEventListener('keydown',e=>{
+  if(e.key === 'Enter') makeRoute();
+ });
+
+// SERVICE WORKER
+if('serviceWorker' in navigator &&
+ location.protocol.startsWith('http')) {
+
+ navigator.serviceWorker
+  .register('./sw.js')
+  .catch(()=>{});
+
+}
+
+</script>
+</body>
+</html>
